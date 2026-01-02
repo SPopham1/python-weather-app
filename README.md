@@ -44,11 +44,11 @@ pip install PyQt6 requests
 
 ### 3. Set up your OpenWeather API key
 You can do either of the following:
-## Option A - Environment variable
+#### Option A - Environment variable
 ```bash
 export OPENWEATHER_API_KEY=your_api_key_here
 ```
-## Option B - .env file
+#### Option B - .env file
 create a .env file in the project root:
 ```bash
 OPENWEATHER_API_KEY=your_api_key_here
