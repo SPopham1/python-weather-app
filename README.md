@@ -54,7 +54,7 @@ create a .env file in the project root:
 OPENWEATHER_API_KEY=your_api_key_here
 ```
 
-4. Run the app
+### 4. Run the app
 ```bash
 python main.py
 ```
