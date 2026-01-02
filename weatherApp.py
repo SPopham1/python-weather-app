@@ -2,12 +2,12 @@ import sys
 import os
 from datetime import datetime, timezone, timedelta
 from PyQt6.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QMessageBox, QSizePolicy, QGridLayout, QScrollArea, QFrame,
-    QListWidget, QListWidgetItem
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QCompleter,
+    QLabel, QLineEdit, QPushButton, QMessageBox, QSizePolicy, QGridLayout, 
+    QScrollArea, QFrame, QListWidget, QListWidgetItem
 )
 from PyQt6.QtGui import QPixmap, QFont
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QStringListModel, QObject, QThread, pyqtSignal
 import requests
 import re
 
@@ -22,7 +22,10 @@ class WeatherCard(QFrame):
         self.setStyleSheet("background-color: #ffe8d6; border: 1px solid #ccc; border-radius: 8px; color: black")
         self.setLayout(QVBoxLayout())
 
-        city_label = QLabel(f"🌇 City: {data.get('name', 'N/A')}")
+        city_name = data.get("name", "N/A")
+        country = data.get("sys", {}).get("country", "")
+        city_label = QLabel(f"🌇 {city_name}, {country}")
+        
         city_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         city_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
 
@@ -84,7 +87,7 @@ class WeatherApp(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("🌤️ Weather Reporter")
-        self.setGeometry(100, 100, 800, 600)
+        self.setGeometry(100, 100, 800, 800)
 
         # Load API key from environment variable or local .env file
         self.api_key = os.environ.get("OPENWEATHER_API_KEY")
@@ -118,7 +121,7 @@ class WeatherApp(QWidget):
         input_layout = QHBoxLayout()
 
         self.city_input = QLineEdit()
-        self.city_input.setPlaceholderText("Enter city name(s), comma separated")
+        self.city_input.setPlaceholderText("Enter locations like: London,GB; Rome,IT; New York,US")
         self.city_input.setClearButtonEnabled(True)
         self.city_input.textEdited.connect(self.show_suggestions)
 
@@ -180,15 +183,18 @@ class WeatherApp(QWidget):
         """)
     
     def show_suggestions(self, text):
-        fragment = text.split(",")[-1].strip().lower()
+        fragment = text.split(";")[-1].strip().lower()
         if not fragment or not self.cities:
             self.suggestion_list.hide()
             return
 
-        matches = [c for c in self.cities if fragment in c.lower()]
+        matches = [
+            c for c in self.cities 
+            if c.lower().startswith(fragment)
+        ][:10]
         self.suggestion_list.clear()
         if matches:
-            for m in matches[:10]:
+            for m in matches:
                 self.suggestion_list.addItem(QListWidgetItem(m))
             self.suggestion_list.show()
         else:
@@ -196,11 +202,14 @@ class WeatherApp(QWidget):
 
     def insert_suggestion(self, item):
         current_text = self.city_input.text()
-        parts = [p.strip() for p in current_text.split(",")]
+        current = self.city_input.text()
+
+        parts = [p.strip() for p in current.split(";") if p.strip()]
         parts[-1] = item.text()
-        new_text = ", ".join(p for p in parts if p)
-        self.city_input.setText(new_text)
-        self.city_input.setCursorPosition(len(new_text))
+
+        new_text = "; ".join(parts)
+        self.city_input.setText(new_text + "; ")
+        self.city_input.setCursorPosition(len(self.city_input.text()))
         self.suggestion_list.hide()
 
     def toggle_unit(self):
@@ -215,53 +224,111 @@ class WeatherApp(QWidget):
         self.on_get_weather()
 
     def on_get_weather(self):
-        cities = [c.strip() for c in self.city_input.text().split(',') if c.strip()]
+        cities = [c.strip() for c in self.city_input.text().split(';') if c.strip()]
+
         if not cities:
             QMessageBox.warning(self, "Input Error", "Please enter one or more city names.")
             return
+
+        self.get_weather_btn.setEnabled(False)
+        self.unit_toggle_btn.setEnabled(False)
+
 
         for i in reversed(range(self.grid_layout.count())):
             widget = self.grid_layout.itemAt(i).widget()
             if widget:
                 widget.setParent(None)
 
-        cols = 2 if len(cities) <= 4 else 3
+        self.threads = []
+        self.workers = []
+        self.pending_results = 0
+        self.any_success = False
 
         for index, city in enumerate(cities):
-            city = city.split(" - ")[0].strip()
-            if not re.fullmatch(r"[A-Za-z\s\-']+", city):
-                QMessageBox.warning(self, "Input Error", f"Invalid city name: {city}")
+            if not re.compile(r"^[A-Za-zÀ-ÿ\s\-']+,\s*[A-Z]{2}$").match(city):
+                QMessageBox.warning(
+                    self,
+                    "Invalid format",
+                    f"Invalid location format:\n\n{city}\n\nUse: City,CC (e.g. London,GB)"
+                )
+                self.get_weather_btn.setEnabled(True)
+                self.unit_toggle_btn.setEnabled(True)
                 return
 
-            try:
-                data = self.fetch_weather_data(city)
-                if data:
-                    card = WeatherCard(data, self.unit_symbol, self.unit)
-                    row = index // cols
-                    col = index % cols
-                    self.grid_layout.addWidget(card, row, col)
-                else:
-                    QMessageBox.warning(self, "City Not Found", f"Weather data for '{city}' was not found.")
-            except requests.RequestException:
-                QMessageBox.critical(self, "Network Error", f"Failed to fetch weather for '{city}'.")
+            thread = QThread(self)
+            worker = WeatherWorker(city, self.unit, self.api_key, index)
+            worker.moveToThread(thread)
 
-    def fetch_weather_data(self, city: str) -> dict | None:
-        cache_key = f"{city.lower()}_{self.unit}"
-        if cache_key in self.cache:
-            return self.cache[cache_key]
+            thread.started.connect(worker.run)
+            worker.finished.connect(self.on_weather_result)
+            worker.finished.connect(thread.quit)
+            worker.finished.connect(worker.deleteLater)
+            thread.finished.connect(thread.deleteLater)
 
-        url = "https://api.openweathermap.org/data/2.5/weather"
-        params = {"q": city, "appid": self.api_key, "units": self.unit}
-        response = requests.get(url, params=params, timeout=5)
+            self.threads.append(thread)
+            self.workers.append(worker)
 
-        if response.status_code == 200:
-            data = response.json()
-            self.cache[cache_key] = data
-            return data
-        elif response.status_code == 404:
-            return None
+            self.pending_results += 1
+            thread.start()
+
+    def on_weather_result(self, city, data, error, index):
+        self.pending_results -= 1
+
+        if error:
+            QMessageBox.critical(self, "Error", f"Failed to fetch weather for '{city}'.")
+        elif not data:
+            QMessageBox.warning(self, "City Not Found", f"'{city}' was not found.")
         else:
-            response.raise_for_status()
+            self.any_success = True
+            cols = 2
+            card = WeatherCard(data, self.unit_symbol, self.unit)
+            row = index // cols
+            col = index % cols
+            self.grid_layout.addWidget(card, row, col)
+
+        if self.pending_results == 0:
+            self.get_weather_btn.setEnabled(True)
+            self.unit_toggle_btn.setEnabled(True)
+
+            if not self.any_success:
+                QMessageBox.warning(self, "Input Error", "No valid city names to fetch.")
+
+            # Cleanup
+            self.threads.clear()
+            self.workers.clear()
+
+
+class WeatherWorker(QObject):
+    finished = pyqtSignal(str, object, object, int)
+
+    def __init__(self, city, unit, api_key, index):
+        super().__init__()
+        self.city = city
+        self.unit = unit
+        self.api_key = api_key
+        self.index = index
+
+    def run(self):
+        try:
+            url = "https://api.openweathermap.org/data/2.5/weather"
+            params = {
+                "q": self.city,
+                "appid": self.api_key,
+                "units": self.unit
+            }
+            response = requests.get(url, params=params, timeout=5)
+
+            if response.status_code == 200: ## success
+                self.finished.emit(self.city, response.json(), None, self.index)
+            elif response.status_code == 404: ## link broken
+                self.finished.emit(self.city, None, None, self.index)
+            else:
+                response.raise_for_status()
+
+        except Exception as e:
+            self.finished.emit(self.city, None, e, self.index)
+
+
 
 
 if __name__ == "__main__":
