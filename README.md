@@ -58,3 +58,30 @@ OPENWEATHER_API_KEY=your_api_key_here
 ```bash
 python main.py
 ```
+
+## How It Works
+- Users enter one or more city names (comma-separated)
+- Weather data is fetched from the OpenWeatherMap API
+- Results are displayed as cards inside a scrollable grid
+- Previously fetched data is cached per city and unit type
+- Sunrise and sunset times are converted using timezone offsets
+
+## Input Validation
+- City names are validated using regex
+- Invalid or unknown cities trigger user-friendly error messages
+- Network errors are handled gracefully
+
+## What I Learned
+- Building desktop GUIs using PyQt6
+- Structuring a UI using layouts and custom widgets
+- Working with third-party REST APIs
+- Handling timezones and UNIX timestamps
+- Improving performance using caching
+- Writing cleaner, modular Python code
+
+## Possible Improvements
+- Persistent caching (file-based)
+- 5-day weather forecast support
+- Dark mode toggle
+- Unit tests for data handling logic
+- Packaging as an executable
