@@ -32,46 +32,58 @@ The app features a clean card-based UI, unit switching, city suggestions, cachin
 ## How to Run
 
 ### 1. Clone the repository
+
 ```bash
 git clone https://github.com/your-username/weather-reporter.git
 cd weather-reporter
 ```
 
 ### 2. Install dependencies
+
 ```bash
 pip install PyQt6 requests
 ```
 
 ### 3. Set up your OpenWeather API key
+
 You can do either of the following:
+
 #### Option A - Environment variable
+
 ```bash
 export OPENWEATHER_API_KEY=your_api_key_here
 ```
+
 #### Option B - .env file
+
 create a .env file in the project root:
+
 ```bash
 OPENWEATHER_API_KEY=your_api_key_here
 ```
 
 ### 4. Run the app
+
 ```bash
 python main.py
 ```
 
 ## How It Works
-- Users enter one or more city names (comma-separated)
+
+- Users enter one or more city names (semicolon-separated)
 - Weather data is fetched from the OpenWeatherMap API
 - Results are displayed as cards inside a scrollable grid
 - Previously fetched data is cached per city and unit type
 - Sunrise and sunset times are converted using timezone offsets
 
 ## Input Validation
+
 - City names are validated using regex
 - Invalid or unknown cities trigger user-friendly error messages
 - Network errors are handled gracefully
 
 ## What I Learned
+
 - Building desktop GUIs using PyQt6
 - Structuring a UI using layouts and custom widgets
 - Working with third-party REST APIs
@@ -80,7 +92,9 @@ python main.py
 - Writing cleaner, modular Python code
 
 ## Possible Improvements
+
 - Persistent caching (file-based)
+- Non-local location data
 - 5-day weather forecast support
 - Dark mode toggle
 - Unit tests for data handling logic
