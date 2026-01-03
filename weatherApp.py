@@ -16,53 +16,102 @@ ICON_SIZE = 100
 class WeatherCard(QFrame):
     def __init__(self, data, unit_symbol, unit):
         super().__init__()
+
         self.unit_symbol = unit_symbol
         self.unit = unit
-        self.setFrameStyle(QFrame.Shape.StyledPanel)
-        self.setStyleSheet("background-color: #ffe8d6; border: 1px solid #ccc; border-radius: 8px; color: black")
-        self.setLayout(QVBoxLayout())
+        self.data = data
 
-        city_name = data.get("name", "N/A")
-        country = data.get("sys", {}).get("country", "")
-        city_label = QLabel(f"🌇 {city_name}, {country}")
-        
-        city_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        city_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        self.setObjectName("WeatherCard")
+        self.setStyleSheet("""
+            QFrame#WeatherCard {
+                background-color: #EBD5AB;
+                border-radius: 12px;
+                border: 5px solid #628141;
+                color: #1B211A;
+            }
+        """)
 
-        temp = data['main']['temp']
-        temp_label = QLabel(f"🌡️ {temp} {unit_symbol}")
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
-        desc = data['weather'][0]['description'].capitalize()
-        desc_label = QLabel(f"🌥️ {desc}")
+        self.build_ui()
 
-        humidity_label = QLabel(f"💧 Humidity: {data['main']['humidity']}%")
-        wind_unit = "m/s" if unit == "metric" else "mph"
-        wind_label = QLabel(f"🌬️ Wind: {data['wind']['speed']} {wind_unit}")
-        pressure_label = QLabel(f"📊 Pressure: {data['main']['pressure']} hPa")
+    def build_ui(self):
+        main = QVBoxLayout(self)
+        main.setContentsMargins(12, 12, 12, 12)
+        main.setSpacing(8)
 
-        tz_offset = data.get("timezone", 0)
-        sunrise = self.convert_unix_to_local_time(data['sys']['sunrise'], tz_offset)
-        sunset = self.convert_unix_to_local_time(data['sys']['sunset'], tz_offset)
+        # ─── Header ───
+        city = self.data.get("name", "N/A")
+        country = self.data.get("sys", {}).get("country", "")
+        header = QLabel(f"📍 {city}, {country}")
+        header.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        header.setStyleSheet("color: #1B211A")
 
-        sunrise_label = QLabel(f"🌅 Sunrise: {sunrise}")
-        sunset_label = QLabel(f"🌇 Sunset: {sunset}")
+        main.addWidget(header)
 
-        icon_label = QLabel()
-        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_code = data['weather'][0].get("icon", "")
+        # ─── Hero (icon + temp) ───
+        hero = QHBoxLayout()
+        hero.setSpacing(10)
+
+        icon = QLabel()
+        icon_code = self.data["weather"][0].get("icon", "")
         pixmap = self.load_weather_icon(icon_code)
         if pixmap:
-            icon_label.setPixmap(pixmap.scaled(ICON_SIZE, ICON_SIZE, Qt.AspectRatioMode.KeepAspectRatio))
+            icon.setPixmap(pixmap.scaled(
+                64, 64,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            ))
 
-        for lbl in [temp_label, desc_label, humidity_label, wind_label, pressure_label, sunrise_label, sunset_label]:
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lbl.setFont(QFont("Arial", 10))
+        temp = QLabel(f"{self.data['main']['temp']:.1f}{self.unit_symbol}")
+        temp.setFont(QFont("Arial", 24, QFont.Weight.Bold))
+        temp.setStyleSheet("color: #1B211A")
 
-        self.layout().addWidget(city_label)
-        self.layout().addWidget(icon_label)
-        for lbl in [temp_label, desc_label, humidity_label, wind_label, pressure_label, sunrise_label, sunset_label]:
-            self.layout().addWidget(lbl)
+        desc = QLabel(self.data["weather"][0]["description"].capitalize())
+        desc.setStyleSheet("color: #628141")
 
+        temp_col = QVBoxLayout()
+        temp_col.addWidget(temp)
+        temp_col.addWidget(desc)
+
+        hero.addWidget(icon)
+        hero.addLayout(temp_col)
+        hero.addStretch()
+
+        main.addLayout(hero)
+
+        # ─── Divider ───
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setStyleSheet("color: #628141")
+        main.addWidget(line)
+
+        # ─── Stats (compact) ───
+        stats = QGridLayout()
+        stats.setHorizontalSpacing(14)
+        stats.setVerticalSpacing(4)
+
+        wind_unit = "m/s" if self.unit == "metric" else "mph"
+        tz_offset = self.data.get("timezone", 0)
+
+        sunrise = self.convert_unix_to_local_time(self.data["sys"]["sunrise"], tz_offset)
+        sunset = self.convert_unix_to_local_time(self.data["sys"]["sunset"], tz_offset)
+
+        def stat(text):
+            lbl = QLabel(text)
+            lbl.setFont(QFont("Arial", 9))
+            lbl.setStyleSheet("color: #1B211A")
+            return lbl
+
+        stats.addWidget(stat(f"💧 {self.data['main']['humidity']}%"), 0, 0)
+        stats.addWidget(stat(f"🌬 {self.data['wind']['speed']} {wind_unit}"), 0, 1)
+        stats.addWidget(stat(f"📊 {self.data['main']['pressure']} hPa"), 1, 0)
+        stats.addWidget(stat(f"🌅 {sunrise}"), 1, 1)
+        stats.addWidget(stat(f"🌇 {sunset}"), 2, 0)
+
+        main.addLayout(stats)
+
+    # ───── Helpers (unchanged logic) ─────
     def load_weather_icon(self, icon_code):
         if not icon_code:
             return None
@@ -70,9 +119,8 @@ class WeatherCard(QFrame):
         try:
             response = requests.get(url, timeout=5)
             response.raise_for_status()
-            img_data = response.content
             pixmap = QPixmap()
-            pixmap.loadFromData(img_data)
+            pixmap.loadFromData(response.content)
             return pixmap
         except requests.RequestException:
             return None
@@ -80,7 +128,7 @@ class WeatherCard(QFrame):
     def convert_unix_to_local_time(self, unix_ts: int, offset_seconds: int) -> str:
         utc_time = datetime.fromtimestamp(unix_ts, tz=timezone.utc)
         local_time = utc_time + timedelta(seconds=offset_seconds)
-        return local_time.strftime("%H:%M:%S")
+        return local_time.strftime("%H:%M")
 
 class CityInput(QLineEdit):
     def __init__(self, parent=None):
@@ -198,30 +246,75 @@ class WeatherApp(QWidget):
     def apply_styles(self):
         self.setStyleSheet("""
             QWidget {
-                background-color: #ffddc0;
+                background-color: #1B211A;
+                color: #EBD5AB;
+                font-family: Arial;
             }
+
             QLineEdit {
+                background-color: #EBD5AB;
+                color: #1B211A;
                 font-size: 14px;
-                padding: 5px;
-                border: 1px solid #aaa;
-                border-radius: 5px;
-                color: black;
+                padding: 6px;
+                border: 1px solid #628141;
+                border-radius: 6px;
             }
+
+            QLineEdit:focus {
+                border: 1px solid #628141; /* no highlight change */
+                outline: none;
+            }
+
             QPushButton {
-                background-color: #4a90e2;
-                color: white;
+                background-color: #628141;
+                color: #EBD5AB;
                 font-weight: bold;
-                border-radius: 5px;
-                padding: 8px;
+                border-radius: 6px;
+                padding: 8px 12px;
             }
+
             QPushButton:hover {
-                background-color: #357abd;
+                background-color: #628141; /* remove hover highlight */
+                color: #EBD5AB;
             }
+
+            QPushButton:pressed {
+                background-color: #628141;
+            }
+
+            QPushButton:disabled {
+                background-color: #3f4f2c;
+                color: #9fa88c;
+            }
+
             QListWidget {
-                background: white;
-                color: black;
-                border: 1px solid #aaa;
+                background-color: #EBD5AB;
+                color: #1B211A;
+                border: 1px solid #628141;
+                border-radius: 6px;
                 max-height: 120px;
+            }
+
+            QListWidget::item:selected {
+                background-color: #8BAE66;
+                color: #1B211A;
+            }
+
+            QListWidget::item:selected:!active {
+                background-color: #8BAE66;
+                color: #1B211A;
+            }
+
+            QListWidget::item:hover {
+                background-color: #EBD5AB;
+            }
+
+            QScrollArea {
+                border: none;
+            }
+
+            QLabel {
+                background: transparent;
             }
         """)
     
