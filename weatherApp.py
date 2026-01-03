@@ -82,6 +82,39 @@ class WeatherCard(QFrame):
         local_time = utc_time + timedelta(seconds=offset_seconds)
         return local_time.strftime("%H:%M:%S")
 
+class CityInput(QLineEdit):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.suggestion_list = None
+
+    def set_suggestion_list(self, list_widget):
+        self.suggestion_list = list_widget
+
+    def keyPressEvent(self, event):
+        if self.suggestion_list and self.suggestion_list.isVisible():
+            key = event.key()
+
+            if key == Qt.Key.Key_Down:
+                row = self.suggestion_list.currentRow()
+                self.suggestion_list.setCurrentRow(row + 1)
+                return
+
+            elif key == Qt.Key.Key_Up:
+                row = self.suggestion_list.currentRow()
+                self.suggestion_list.setCurrentRow(max(0, row - 1))
+                return
+
+            elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                item = self.suggestion_list.currentItem()
+                if item:
+                    self.parent().insert_suggestion(item)
+                return
+
+            elif key == Qt.Key.Key_Escape:
+                self.suggestion_list.hide()
+                return
+
+        super().keyPressEvent(event)
 
 class WeatherApp(QWidget):
     def __init__(self):
@@ -120,14 +153,22 @@ class WeatherApp(QWidget):
         main_layout = QVBoxLayout()
         input_layout = QHBoxLayout()
 
-        self.city_input = QLineEdit()
-        self.city_input.setPlaceholderText("Enter locations like: London,GB; Rome,IT; New York,US")
+        # 1️⃣ Create the input FIRST
+        self.city_input = CityInput(self)
+        self.city_input.setPlaceholderText(
+            "Enter locations like: London,GB; Rome,IT; New York,US"
+        )
         self.city_input.setClearButtonEnabled(True)
-        self.city_input.textEdited.connect(self.show_suggestions)
 
+        # 2️⃣ Create the suggestion list SECOND
         self.suggestion_list = QListWidget(self)
         self.suggestion_list.hide()
+        self.suggestion_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.suggestion_list.itemClicked.connect(self.insert_suggestion)
+
+        # 3️⃣ Link them THIRD (now both exist)
+        self.city_input.set_suggestion_list(self.suggestion_list)
+        self.city_input.textEdited.connect(self.show_suggestions)
 
         input_layout.addWidget(self.city_input)
 
@@ -142,6 +183,7 @@ class WeatherApp(QWidget):
         main_layout.addLayout(input_layout)
         main_layout.addWidget(self.suggestion_list)
 
+        # Scroll area
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.cards_widget = QWidget()
@@ -151,6 +193,7 @@ class WeatherApp(QWidget):
 
         main_layout.addWidget(self.scroll_area)
         self.setLayout(main_layout)
+
 
     def apply_styles(self):
         self.setStyleSheet("""
@@ -196,6 +239,7 @@ class WeatherApp(QWidget):
         if matches:
             for m in matches:
                 self.suggestion_list.addItem(QListWidgetItem(m))
+            self.suggestion_list.setCurrentRow(0)
             self.suggestion_list.show()
         else:
             self.suggestion_list.hide()
