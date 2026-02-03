@@ -99,3 +99,5 @@ python main.py
 - Dark mode toggle
 - Unit tests for data handling logic
 - Packaging as an executable
+- Alerts & Notifications
+- Accessibility
